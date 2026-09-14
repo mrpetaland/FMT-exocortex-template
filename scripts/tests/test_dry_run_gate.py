@@ -24,8 +24,9 @@ from pathlib import Path
 
 import pytest
 
-HOOK = Path(__file__).parent.parent.parent / ".claude" / "hooks" / "dry-run-gate.sh"
-STOP_HOOK = Path(__file__).parent.parent.parent / ".claude" / "hooks" / "protocol-stop-gate.sh"
+ROOT = Path(__file__).resolve().parents[2]
+HOOK = ROOT / ".claude" / "hooks" / "dry-run-gate.sh"
+STOP_HOOK = ROOT / ".claude" / "hooks" / "protocol-stop-gate.sh"
 SENTINEL = Path("/tmp/iwe-dry-run.flag")
 OWNER = Path("/tmp/iwe-dry-run-owner-pytest-session.token")
 
@@ -74,9 +75,20 @@ class TestSentinelActive:
         assert r.returncode == 0, r.stderr
 
     def test_whitelisted_absolute_path_allowed(self, sentinel):
-        """Абсолютный путь разрешён только привязанный к workspace ($HOME/IWE)."""
-        r = _run_hook(f"bash {Path.home()}/IWE/.claude/scripts/load-extensions.sh day-open after")
+        """Абсолютный путь разрешён только привязанный к фактическому workspace."""
+        r = _run_hook(f"bash {ROOT}/.claude/scripts/load-extensions.sh day-open after")
         assert r.returncode == 0, r.stderr
+
+    def test_documented_day_close_prepare_allowed(self, sentinel):
+        """The documented digest invocation is read-only and needs no env source."""
+        command = 'bash "${IWE_SCRIPTS:-${IWE_TEMPLATE:-$HOME/IWE/FMT-exocortex-template}/scripts}/day-close-prepare.sh"'
+        r = _run_hook(command)
+        assert r.returncode == 0, r.stderr
+
+    def test_day_close_prepare_with_env_source_stays_blocked(self, sentinel):
+        """Do not whitelist arbitrary code loaded through a sourced env file."""
+        command = '. "${IWE_PATHS_FILE:-$HOME/.iwe-paths}" 2>/dev/null; bash "$IWE_SCRIPTS/day-close-prepare.sh"'
+        assert _run_hook(command).returncode == 2
 
     def test_decoy_tmp_path_blocked(self, sentinel):
         """review-01 High: подложный /tmp/.claude/scripts/load-extensions.sh — block."""
@@ -155,7 +167,8 @@ class TestSentinelActive:
         first step, exactly the "❌ ритуал ломается рано" case the contract
         itself warns about. Confirmed no write paths in both scripts."""
         for script in ("memory-drift-scan.py", "check-index-health.py"):
-            cmd = f"python3 ${{IWE_TEMPLATE:-{Path.home()}/IWE/FMT-exocortex-template}}/.claude/scripts/{script}"
+            template_default = ROOT / "FMT-exocortex-template"
+            cmd = f"python3 ${{IWE_TEMPLATE:-{template_default}}}/.claude/scripts/{script}"
             r = _run_hook(cmd)
             assert r.returncode == 0, f"{script}: {r.stderr}"
 
@@ -305,3 +318,9 @@ class TestStopOwnership:
             assert not OWNER.exists(), "sentinel уже снят явно — owner-файл residue, чистится"
         finally:
             OWNER.unlink(missing_ok=True)
+
+    def test_stop_without_active_rehearsal_does_not_leak_return_trap(self):
+        """A later sourced bootstrap must not expand dead function locals under set -u."""
+        result = self._run_stop("ordinary-session")
+        assert result.returncode == 0, result.stderr
+        assert "unbound variable" not in result.stderr

@@ -140,6 +140,10 @@ complete_dry_run_on_stop() {
   if [ "$(sed -n '2p' "$lock_dir/pid" 2>/dev/null)" = "$nonce" ]; then
     rm -rf "$lock_dir" 2>/dev/null || true
   fi
+  # RETURN trap outlives function-local variables in Bash. Clear it before
+  # sourcing another file, otherwise set -u expands stale lock_dir/nonce and
+  # turns an ordinary Stop event into exit 1.
+  trap - RETURN 2>/dev/null || true
   return 0
 }
 

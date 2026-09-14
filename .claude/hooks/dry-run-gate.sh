@@ -523,7 +523,12 @@ if [ "$TOOL_NAME" = "Bash" ]; then
     # инжектируемы вызывающим окружением — тот самый обход, который
     # review-01/review-02 закрыли отказом от env-default в этом whitelist).
     WL_TEMPLATE_ABS="$IWE_ROOT_GUESS/FMT-exocortex-template"
-    NORM=$(printf '%s' "$CMD" | sed -E \
+    NORM_INPUT="$CMD"
+    DOCUMENTED_DAY_CLOSE_PREPARE='bash "${IWE_SCRIPTS:-${IWE_TEMPLATE:-$HOME/IWE/FMT-exocortex-template}/scripts}/day-close-prepare.sh"'
+    if [ "$CMD" = "$DOCUMENTED_DAY_CLOSE_PREPARE" ]; then
+        NORM_INPUT='bash __WL_DAY_CLOSE_PREPARE__'
+    fi
+    NORM=$(printf '%s' "$NORM_INPUT" | sed -E \
         -e 's@"\$IWE_SCRIPTS/day-close-prepare\.sh"@ __WL_DAY_CLOSE_PREPARE__ @g' \
         -e 's@"\$IWE_SCRIPTS/dry-run-complete\.sh"@ __WL_DRY_RUN_COMPLETE__ @g' \
         -e "s@\\\$\\{IWE_TEMPLATE:-${WL_TEMPLATE_ABS//\//\\/}\\}/\\.claude/scripts/memory-drift-scan\\.py@ __WL_PY_MDS__ @g" \

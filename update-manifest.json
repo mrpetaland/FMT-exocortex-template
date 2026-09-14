@@ -69,7 +69,7 @@
     },
     {
       "path": ".claude/hooks/dry-run-gate.sh",
-      "sha256": "2e3dd292d23af97801d664565f6add12cad1b39030b110ed21e20c944372241a"
+      "sha256": "218d9f7150da1fe64790adeeb9f2e10e06dc0da2113d16977e6387b4ffb264ee"
     },
     {
       "path": ".claude/hooks/extensions-gate.sh",
@@ -117,7 +117,7 @@
     },
     {
       "path": ".claude/hooks/protocol-stop-gate.sh",
-      "sha256": "40e9d2b474fe71719fb704cb4d1b2415bc8e52272bcca5519baff64dd38ed9dd"
+      "sha256": "616feb7ddc78aede13a750c2ae733c482aaf469d40b1b6ea79d9e1e20d79dc7f"
     },
     {
       "path": ".claude/hooks/pull-on-touch.sh",
@@ -393,7 +393,7 @@
     },
     {
       "path": ".claude/skills/day-close/SKILL.md",
-      "sha256": "03d5467543065220642d6fe03838015a48b5ca4cf4945c4b6c5000f9d48f4609"
+      "sha256": "a22251dd41eb22bf2099ed95db81def16baa02587b43bfb93acbe16169d5a000"
     },
     {
       "path": ".claude/skills/day-close/day-close-details.md",
@@ -2329,7 +2329,7 @@
     },
     {
       "path": "scripts/iwe-drift.sh",
-      "sha256": "314d3b4816d82face81014d74d56064253b63d29b8152f0986e6c451ed575a07"
+      "sha256": "2d9986f85ae031344c4f22ef0215b545e45a2f823b6bf942135da5113a838bcf"
     },
     {
       "path": "scripts/iwe-grep-secret.sh",
@@ -3086,6 +3086,7 @@
     "scripts/tests/test_issue_729_strategy_day.sh",
     "scripts/tests/test_issue_extensions_dir_missing.sh",
     "scripts/tests/test_issue_python_resolver_contract.sh",
+    "scripts/tests/test_iwe_drift_manifest_boundary.py",
     "scripts/tests/test_manifest_coverage_local.py",
     "scripts/tests/test_mount_readonly_packs.sh",
     "scripts/tests/test_pending_phases_sweep.sh",
