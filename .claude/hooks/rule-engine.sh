@@ -1380,7 +1380,9 @@ dispatch_event() {
 # === Трассировка гейтов протокола закрытия (issue #678) ===
 
 _trace_protocol_default() {
-    printf '%s\n' "${RULE_PROTOCOL:-${IWE_WORKSPACE:-$HOME/IWE}/memory/protocol-close.md}"
+    local engine_root
+    engine_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+    printf '%s\n' "${RULE_PROTOCOL:-${IWE_WORKSPACE:-$engine_root}/memory/protocol-close.md}"
 }
 
 _trace_state_file() {

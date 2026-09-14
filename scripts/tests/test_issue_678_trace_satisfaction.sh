@@ -52,6 +52,9 @@ done
 after=$(bash "$ENGINE" check-trace-satisfaction --protocol "$PROTOCOL" --section "Quick Close")
 python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["verdict"] == "ok" and d["satisfied"] == 2 and d["missing"] == []' <<< "$after"
 
+default_protocol=$(RULE_PROTOCOL="$PROTOCOL" bash "$ENGINE" list-gates --section "Quick Close")
+[ "$default_protocol" = "$(printf '%s\n' "${gates[@]}")" ]
+
 export RULE_TRACE_SESSION_ID="session-b"
 set +e
 other_session=$(bash "$ENGINE" check-trace-satisfaction --protocol "$PROTOCOL" --section "Quick Close")
