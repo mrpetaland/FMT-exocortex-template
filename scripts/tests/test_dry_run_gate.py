@@ -108,6 +108,11 @@ class TestSentinelActive:
         for cmd in ("eval rm x", "source ~/.secrets/env", ". ./write.sh", "echo f | xargs rm"):
             assert _run_hook(cmd).returncode == 2, cmd
 
+    def test_uv_runner_blocked(self, sentinel):
+        """A uv-launched Python command can write files or call external APIs."""
+        command = "uv run --no-project python -B scripts/ticktick_sync.py pull"
+        assert _run_hook(command).returncode == 2
+
     def test_subshell_git_commit_blocked(self, sentinel):
         """#237 п.1: обход через скобки."""
         assert _run_hook("(git commit -am x)").returncode == 2

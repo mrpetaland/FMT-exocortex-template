@@ -648,6 +648,9 @@ if [ "$TOOL_NAME" = "Bash" ]; then
             eval|source|.|xargs)
                 block "$CMD (indirect execution under dry-run)"
                 ;;
+            uv)
+                block "$CMD (indirect execution under dry-run)"
+                ;;
             python|python3)
                 # issue #460 path 5: real write path (extensions/day-close.before.garmin-verify.md
                 # runs `python3 garmin-collect.py`, network + file writes) had no matcher branch
