@@ -33,7 +33,7 @@ SESSION_STATE_DIR="$HOME/.claude/state"
 mkdir -p "$SESSION_STATE_DIR" 2>/dev/null || true
 SESSION_WARN_LOG="$SESSION_STATE_DIR/session-${SESSION_ID}-warns.jsonl"
 RULE_ENGINE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-TRACE_STATE_DIR="${RULE_TRACE_STATE_DIR:-${IWE_WORKSPACE:-$RULE_ENGINE_ROOT}/logs/rule-engine/traces}"
+TRACE_STATE_DIR="${RULE_TRACE_STATE_DIR:-${TMPDIR:-/tmp}/iwe-rule-engine-${UID:-user}/traces}"
 
 # === Утилиты ===
 
