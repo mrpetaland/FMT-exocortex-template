@@ -32,7 +32,8 @@ SESSION_ID="${RULE_TRACE_SESSION_ID:-${CLAUDE_SESSION_ID:-${CODEX_THREAD_ID:-${C
 SESSION_STATE_DIR="$HOME/.claude/state"
 mkdir -p "$SESSION_STATE_DIR" 2>/dev/null || true
 SESSION_WARN_LOG="$SESSION_STATE_DIR/session-${SESSION_ID}-warns.jsonl"
-TRACE_STATE_DIR="${RULE_TRACE_STATE_DIR:-$SESSION_STATE_DIR/rule-traces}"
+RULE_ENGINE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+TRACE_STATE_DIR="${RULE_TRACE_STATE_DIR:-${IWE_WORKSPACE:-$RULE_ENGINE_ROOT}/logs/rule-engine/traces}"
 
 # === Утилиты ===
 
@@ -1386,7 +1387,7 @@ _trace_protocol_default() {
 }
 
 _trace_engine_root() {
-    cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
+    printf '%s\n' "$RULE_ENGINE_ROOT"
 }
 
 _trace_sha256() {

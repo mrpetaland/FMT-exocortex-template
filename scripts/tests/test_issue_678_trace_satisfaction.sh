@@ -120,4 +120,12 @@ unknown_rc=$?
 set -e
 [ "$unknown_rc" -eq 3 ]
 
+unset RULE_TRACE_STATE_DIR
+export IWE_WORKSPACE="$TMP_ROOT/workspace"
+export RULE_TRACE_SESSION_ID="workspace-state"
+mapfile -t workspace_gates < <(bash "$ENGINE" list-gates --protocol "$PROTOCOL" --section "Quick Close")
+bash "$ENGINE" mark-gate "${workspace_gates[0]}" --protocol "$PROTOCOL" --section "Quick Close" >/dev/null
+mapfile -t workspace_state_files < <(find "$IWE_WORKSPACE/logs/rule-engine/traces" -type f)
+[ "${#workspace_state_files[@]}" -eq 1 ]
+
 echo "trace-satisfaction tests passed"
