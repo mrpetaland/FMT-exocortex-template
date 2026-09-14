@@ -13,8 +13,8 @@
 # dispatch_event. Прямой запуск тоже доступен — для тестов.
 #
 # CLI exit codes: dispatch/list-rules/session-summary/session-clear/test — 0.
-# check-trace-satisfaction|list-gates|mark-gate — 3 (NOT_IMPLEMENTED, issue #678:
-# protocol-close.md ссылается на них, механика ещё не реализована). Неизвестная
+# list-gates/mark-gate — 0 при успехе; check-trace-satisfaction — 0 при полном
+# наборе отметок, 2 при незакрытых гейтах, 3 при ошибке контракта. Неизвестная
 # подкоманда — 1 (usage).
 #
 # REGISTRY: ~/IWE/.claude/rules-registry.yaml (генерируется из PACK-agent-rules/)
@@ -28,10 +28,11 @@ mkdir -p "$JOURNAL_DIR"
 JOURNAL_FILE="$JOURNAL_DIR/$(date +%Y-%m-%d).jsonl"
 
 # Session-state: per-session warn/block log (WP-272 Ф5)
-SESSION_ID="${CLAUDE_SESSION_ID:-default}"
+SESSION_ID="${RULE_TRACE_SESSION_ID:-${CLAUDE_SESSION_ID:-${CODEX_THREAD_ID:-${CODEX_SESSION_ID:-default}}}}"
 SESSION_STATE_DIR="$HOME/.claude/state"
 mkdir -p "$SESSION_STATE_DIR" 2>/dev/null || true
 SESSION_WARN_LOG="$SESSION_STATE_DIR/session-${SESSION_ID}-warns.jsonl"
+TRACE_STATE_DIR="${RULE_TRACE_STATE_DIR:-$SESSION_STATE_DIR/rule-traces}"
 
 # === Утилиты ===
 
@@ -1376,6 +1377,191 @@ dispatch_event() {
         "$(printf '%s' "$final_reason" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read(), ensure_ascii=False))')"
 }
 
+# === Трассировка гейтов протокола закрытия (issue #678) ===
+
+_trace_protocol_default() {
+    printf '%s\n' "${RULE_PROTOCOL:-${IWE_WORKSPACE:-$HOME/IWE}/memory/protocol-close.md}"
+}
+
+_trace_state_file() {
+    local safe_session
+    safe_session=$(printf '%s' "$SESSION_ID" | sha256sum | awk '{print $1}')
+    printf '%s/%s.gates\n' "$TRACE_STATE_DIR" "$safe_session"
+}
+
+_trace_run() {
+    local action="$1" protocol="$2" section="$3" key="${4:-}" state_file
+    state_file=$(_trace_state_file)
+    python3 - "$action" "$protocol" "$section" "$key" "$state_file" <<'PYEOF'
+import fcntl
+import hashlib
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+action, protocol_arg, section, requested_key, state_arg = sys.argv[1:]
+protocol = Path(protocol_arg).expanduser().resolve()
+state_file = Path(state_arg).expanduser()
+
+
+def fail(reason, code=3):
+    print(json.dumps({"verdict": "error", "reason": reason}, ensure_ascii=False))
+    raise SystemExit(code)
+
+
+try:
+    lines = protocol.read_text(encoding="utf-8").splitlines()
+except OSError as exc:
+    fail(f"protocol unreadable: {protocol}: {exc}")
+
+heading_re = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+gate_re = re.compile(r"(?<!`)\[\[gate(?::([A-Za-z0-9._-]+))?\]\](?!`)")
+fence_re = re.compile(r"^\s*(```|~~~)")
+outside_fence = []
+in_fence = False
+for line in lines:
+    if fence_re.match(line):
+        outside_fence.append(False)
+        in_fence = not in_fence
+    else:
+        outside_fence.append(not in_fence)
+
+
+def section_range(name):
+    if not name:
+        return 0, len(lines)
+    start = None
+    level = None
+    for index, line in enumerate(lines):
+        if not outside_fence[index]:
+            continue
+        match = heading_re.match(line)
+        if not match:
+            continue
+        title = match.group(2).strip()
+        if title == name or title.startswith(name + " "):
+            start = index + 1
+            level = len(match.group(1))
+            break
+    if start is None:
+        fail(f"section not found: {name}")
+    end = len(lines)
+    for index in range(start, len(lines)):
+        if not outside_fence[index]:
+            continue
+        match = heading_re.match(lines[index])
+        if (
+            match
+            and len(match.group(1)) <= level
+            and not match.group(2).strip().startswith("ЧАСТЬ ")
+        ):
+            end = index
+            break
+    return start, end
+
+
+selected_start, selected_end = section_range(section)
+found = []
+for index in range(selected_start, selected_end):
+    if not outside_fence[index]:
+        continue
+    line = lines[index]
+    for match in gate_re.finditer(line):
+        rule = match.group(1) or "gate"
+        # AR.007 is the verifier that consumes this prerequisite trace. Requiring
+        # its completion here would create a cycle: trace -> verifier -> trace.
+        if rule != "AR.007":
+            found.append((rule, " ".join(line.split())))
+
+if not found:
+    fail(f"no gates found in section: {section or '<all>'}")
+
+section_slug = re.sub(r"[^a-z0-9]+", "-", section.lower()).strip("-") or "all"
+signature = hashlib.sha256(
+    "\n".join(f"{rule}\t{text}" for rule, text in found).encode("utf-8")
+).hexdigest()[:12]
+prefix = f"{protocol.name}:{section_slug}:{signature}"
+gates = [
+    {
+        "key": f"{prefix}:{index:02d}:{rule}",
+        "rule": rule,
+        "text": text,
+    }
+    for index, (rule, text) in enumerate(found, 1)
+]
+valid_keys = {gate["key"] for gate in gates}
+
+if action == "list":
+    for gate in gates:
+        print(gate["key"])
+    raise SystemExit(0)
+
+state_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+state_file.touch(mode=0o600, exist_ok=True)
+with state_file.open("r+", encoding="utf-8") as state:
+    fcntl.flock(state.fileno(), fcntl.LOCK_EX)
+    marked = {line.strip() for line in state if line.strip()}
+    if action == "mark":
+        if requested_key not in valid_keys:
+            fail("gate key is not present in the current protocol section")
+        if requested_key not in marked:
+            state.seek(0, os.SEEK_END)
+            state.write(requested_key + "\n")
+            state.flush()
+            os.fsync(state.fileno())
+        print(json.dumps({"verdict": "ok", "marked": requested_key}, ensure_ascii=False))
+        raise SystemExit(0)
+    if action != "check":
+        fail(f"unknown trace action: {action}")
+    missing = [gate for gate in gates if gate["key"] not in marked]
+
+payload = {
+    "verdict": "ok" if not missing else "block",
+    "protocol": str(protocol),
+    "section": section,
+    "required": len(gates),
+    "satisfied": len(gates) - len(missing),
+    "missing": missing,
+}
+print(json.dumps(payload, ensure_ascii=False))
+raise SystemExit(0 if not missing else 2)
+PYEOF
+}
+
+_trace_parse() {
+    local action="$1"
+    shift
+    local protocol section="" key=""
+    protocol=$(_trace_protocol_default)
+    if [ "$action" = "mark" ]; then
+        [ "$#" -gt 0 ] || { echo '{"verdict":"error","reason":"mark-gate requires a key"}'; return 3; }
+        key="$1"
+        shift
+    fi
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --protocol)
+                [ "$#" -ge 2 ] || { echo '{"verdict":"error","reason":"--protocol requires a value"}'; return 3; }
+                protocol="$2"
+                shift 2
+                ;;
+            --section)
+                [ "$#" -ge 2 ] || { echo '{"verdict":"error","reason":"--section requires a value"}'; return 3; }
+                section="$2"
+                shift 2
+                ;;
+            *)
+                echo '{"verdict":"error","reason":"unknown trace argument"}'
+                return 3
+                ;;
+        esac
+    done
+    [ -n "$section" ] || { echo '{"verdict":"error","reason":"--section is required"}'; return 3; }
+    _trace_run "$action" "$protocol" "$section" "$key"
+}
+
 # === CLI ===
 
 case "${1:-dispatch}" in
@@ -1429,6 +1615,12 @@ PYEOF
         SID="${2:-$SESSION_ID}"
         WARN_LOG="$SESSION_STATE_DIR/session-${SID}-warns.jsonl"
         [ -f "$WARN_LOG" ] && rm -f "$WARN_LOG" && echo "cleared: $WARN_LOG" || echo "nothing to clear"
+        if [ "$SID" = "$SESSION_ID" ]; then
+            TRACE_FILE=$(_trace_state_file)
+        else
+            TRACE_FILE="$TRACE_STATE_DIR/$(printf '%s' "$SID" | sha256sum | awk '{print $1}').gates"
+        fi
+        [ -f "$TRACE_FILE" ] && rm -f "$TRACE_FILE" && echo "cleared: $TRACE_FILE" || true
         ;;
     list-rules)
         # WP-529 (continuation, 19.08, cold review — same second-pass grep as
@@ -1756,20 +1948,20 @@ PYEOF
         echo "=== Results: $PASS PASS / $FAIL FAIL (total $((PASS+FAIL))) ==="
         [ "$FAIL" -eq 0 ] && exit 0 || exit 1
         ;;
-    check-trace-satisfaction|list-gates|mark-gate)
-        # issue #678: memory/protocol-close.md ссылается на эти три
-        # подкоманды (Quick/Week/Month Close, gate-трассировка WP-481 Ф5.1),
-        # но механика никогда не была реализована. Раньше это падало в
-        # безымянную ветку *) ниже с generic usage — на практике неотличимо
-        # от опечатки в имени подкоманды и не сообщает, что именно не
-        # работает. Явная ветка с понятным сообщением вместо тихой догадки:
-        # проверка гейтов реально не произошла, это не «прошла с exit 1».
-        echo "NOT_IMPLEMENTED: '$1' (rule-engine.sh) — gate-трассировка (WP-481 Ф5.1) описана в protocol-close.md, но не реализована (issue #678)." >&2
-        echo "Гейты этой секции НЕ проверены автоматически — Close-протокол должен считать этот шаг непройденным, не пропущенным." >&2
-        exit 3
+    list-gates)
+        shift
+        _trace_parse list "$@"
+        ;;
+    mark-gate)
+        shift
+        _trace_parse mark "$@"
+        ;;
+    check-trace-satisfaction)
+        shift
+        _trace_parse check "$@"
         ;;
     *)
-        echo "Usage: rule-engine.sh {dispatch|list-rules|test|session-summary|session-clear}"
+        echo "Usage: rule-engine.sh {dispatch|list-rules|test|session-summary|session-clear|list-gates|mark-gate|check-trace-satisfaction}"
         echo "  dispatch     — process event (use RULE_EVENT + RULE_CONTEXT env vars)"
         echo "  list-rules   — show all rules in registry"
         echo "  test         — run smoke tests (WP-271 incident simulation)"

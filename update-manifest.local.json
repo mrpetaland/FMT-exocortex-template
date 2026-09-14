@@ -1,0 +1,6 @@
+{
+  "excluded_paths": [
+    ".claude/hooks/rule-engine.sh",
+    "scripts/tests/test_issue_678_trace_satisfaction.sh"
+  ]
+}
