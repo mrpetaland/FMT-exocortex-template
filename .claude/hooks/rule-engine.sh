@@ -1381,19 +1381,48 @@ dispatch_event() {
 
 _trace_protocol_default() {
     local engine_root
-    engine_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+    engine_root=$(_trace_engine_root)
     printf '%s\n' "${RULE_PROTOCOL:-${IWE_WORKSPACE:-$engine_root}/memory/protocol-close.md}"
+}
+
+_trace_engine_root() {
+    cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
+}
+
+_trace_sha256() {
+    local engine_root common_lib digest
+    engine_root=$(_trace_engine_root) || return 1
+    common_lib="${IWE_SCRIPTS:-$engine_root/scripts}/lib/common.sh"
+    [ -r "$common_lib" ] || {
+        echo "trace hashing helper unreadable: $common_lib" >&2
+        return 1
+    }
+    # shellcheck source=../../scripts/lib/common.sh
+    source "$common_lib"
+    command -v iwe_sha256 >/dev/null 2>&1 || return 1
+    digest=$(iwe_sha256) || return 1
+    case "$digest" in
+        *[!0-9a-fA-F]*|'') return 1 ;;
+    esac
+    [ "${#digest}" -eq 64 ] || return 1
+    printf '%s\n' "$digest"
 }
 
 _trace_state_file() {
     local safe_session
-    safe_session=$(printf '%s' "$SESSION_ID" | sha256sum | awk '{print $1}')
+    safe_session=$(printf '%s' "$SESSION_ID" | _trace_sha256) || {
+        echo "cannot compute trace session hash" >&2
+        return 1
+    }
     printf '%s/%s.gates\n' "$TRACE_STATE_DIR" "$safe_session"
 }
 
 _trace_run() {
     local action="$1" protocol="$2" section="$3" key="${4:-}" state_file
-    state_file=$(_trace_state_file)
+    state_file=$(_trace_state_file) || {
+        printf '{"verdict":"error","reason":"cannot isolate trace session state"}\n'
+        return 3
+    }
     python3 - "$action" "$protocol" "$section" "$key" "$state_file" <<'PYEOF'
 import fcntl
 import hashlib
@@ -1482,7 +1511,13 @@ if not found:
 
 section_slug = re.sub(r"[^a-z0-9]+", "-", section.lower()).strip("-") or "all"
 signature = hashlib.sha256(
-    "\n".join(f"{rule}\t{text}" for rule, text in found).encode("utf-8")
+    (
+        str(protocol)
+        + "\0"
+        + section
+        + "\0"
+        + "\n".join(lines[selected_start:selected_end])
+    ).encode("utf-8")
 ).hexdigest()[:12]
 prefix = f"{protocol.name}:{section_slug}:{signature}"
 gates = [
@@ -1618,9 +1653,16 @@ PYEOF
         WARN_LOG="$SESSION_STATE_DIR/session-${SID}-warns.jsonl"
         [ -f "$WARN_LOG" ] && rm -f "$WARN_LOG" && echo "cleared: $WARN_LOG" || echo "nothing to clear"
         if [ "$SID" = "$SESSION_ID" ]; then
-            TRACE_FILE=$(_trace_state_file)
+            TRACE_FILE=$(_trace_state_file) || {
+                echo "ERROR: cannot isolate trace session state" >&2
+                exit 3
+            }
         else
-            TRACE_FILE="$TRACE_STATE_DIR/$(printf '%s' "$SID" | sha256sum | awk '{print $1}').gates"
+            TRACE_HASH=$(printf '%s' "$SID" | _trace_sha256) || {
+                echo "ERROR: cannot compute trace session hash" >&2
+                exit 3
+            }
+            TRACE_FILE="$TRACE_STATE_DIR/$TRACE_HASH.gates"
         fi
         [ -f "$TRACE_FILE" ] && rm -f "$TRACE_FILE" && echo "cleared: $TRACE_FILE" || true
         ;;
