@@ -77,8 +77,14 @@ python3 -c 'import json,sys; assert json.load(sys.stdin)["satisfied"] == 0' <<< 
 SAME_NAME_DIR="$TMP_ROOT/other"
 mkdir -p "$SAME_NAME_DIR"
 cp "$PROTOCOL" "$SAME_NAME_DIR/protocol-close.md"
+mapfile -t changed_gates < <(bash "$ENGINE" list-gates --protocol "$PROTOCOL" --section "Quick Close")
+for gate in "${changed_gates[@]}"; do
+    bash "$ENGINE" mark-gate "$gate" --protocol "$PROTOCOL" --section "Quick Close" >/dev/null
+done
+changed_after=$(bash "$ENGINE" check-trace-satisfaction --protocol "$PROTOCOL" --section "Quick Close")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["verdict"] == "ok" and d["satisfied"] == 2' <<< "$changed_after"
 mapfile -t other_gates < <(bash "$ENGINE" list-gates --protocol "$SAME_NAME_DIR/protocol-close.md" --section "Quick Close")
-[ "${other_gates[0]}" != "${gates[0]}" ]
+[ "${other_gates[0]}" != "${changed_gates[0]}" ]
 set +e
 same_name=$(bash "$ENGINE" check-trace-satisfaction --protocol "$SAME_NAME_DIR/protocol-close.md" --section "Quick Close")
 same_name_rc=$?
