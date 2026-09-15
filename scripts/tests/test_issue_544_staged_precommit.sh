@@ -24,8 +24,9 @@ bad()  { echo "FAIL: $1"; fail=$((fail + 1)); }
 
 # --- Каркас: workspace/FMT-exocortex-template/scripts + governance-репо ---
 WS="$TMP/ws"
-mkdir -p "$WS/FMT-exocortex-template/scripts"
+mkdir -p "$WS/FMT-exocortex-template/scripts/lib"
 cp "$ROOT/scripts/validate-staged-artifacts.sh" "$WS/FMT-exocortex-template/scripts/"
+cp "$ROOT/scripts/lib/find-python3.sh" "$WS/FMT-exocortex-template/scripts/lib/"
 GOV="$WS/${GOVERNANCE_REPO:-DS-strategy}"
 mkdir -p "$GOV/.githooks" "$GOV/current"
 cp "$ROOT/seed/strategy/.githooks/pre-commit" "$GOV/.githooks/pre-commit"
@@ -154,8 +155,7 @@ git -C "$GOV" reset -q
 rm -f "$GOV/current/WeekPlan W99.md"
 
 # --- 7. Mandatory fail-closed: конфиг существует, но не читается ---
-mkdir -p "$WS/scripts/lib" "$WS/memory"
-cp "$ROOT/scripts/lib/find-python3.sh" "$WS/scripts/lib/"
+mkdir -p "$WS/memory"
 printf 'mandatory_daily_wps: [сломано\n  без закрывающей скобки\n' > "$WS/memory/day-rhythm-config.yaml"
 valid_dayplan "$GOV/current/DayPlan 2026-08-31.md"
 if (cd "$GOV" && git add "current/DayPlan 2026-08-31.md" && git commit -qm "broken-config") >"$TMP/c7.err" 2>&1; then
@@ -217,15 +217,15 @@ printf 'mandatory_daily_wps: []
 FAKEPY="$WS/fake-python3"
 printf '#!/bin/sh\nexit 126\n' > "$FAKEPY"; chmod +x "$FAKEPY"
 # Подменяем резолвер: он должен вернуть путь к падающему интерпретатору.
-mv "$WS/scripts/lib/find-python3.sh" "$WS/scripts/lib/find-python3.sh.away"
-printf '#!/bin/sh\necho "%s"\n' "$FAKEPY" > "$WS/scripts/lib/find-python3.sh"; chmod +x "$WS/scripts/lib/find-python3.sh"
+mv "$WS/FMT-exocortex-template/scripts/lib/find-python3.sh" "$WS/FMT-exocortex-template/scripts/lib/find-python3.sh.away"
+printf '#!/bin/sh\necho "%s"\n' "$FAKEPY" > "$WS/FMT-exocortex-template/scripts/lib/find-python3.sh"; chmod +x "$WS/FMT-exocortex-template/scripts/lib/find-python3.sh"
 valid_dayplan "$GOV/current/DayPlan 2026-09-02.md"
 if (cd "$GOV" && git add "current/DayPlan 2026-09-02.md" && git commit -qm "weird-rc") >"$TMP/c11.err" 2>&1; then
     bad "нестандартный rc интерпретатора (126) блокирует коммит (fail-closed)"
 else
     ok "нестандартный rc интерпретатора (126) блокирует коммит (fail-closed)"
 fi
-mv "$WS/scripts/lib/find-python3.sh.away" "$WS/scripts/lib/find-python3.sh"
+mv "$WS/FMT-exocortex-template/scripts/lib/find-python3.sh.away" "$WS/FMT-exocortex-template/scripts/lib/find-python3.sh"
 git -C "$GOV" reset -q
 rm -f "$GOV/current/DayPlan 2026-09-02.md" "$WS/memory/day-rhythm-config.yaml" "$FAKEPY"
 

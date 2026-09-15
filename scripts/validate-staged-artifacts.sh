@@ -22,6 +22,7 @@ trap 'rm -rf "$TMPDIR_OWN"' EXIT HUP INT TERM
 
 WORKSPACE="${IWE_WORKSPACE:-${IWE_ROOT:-$(cd "$(git rev-parse --show-toplevel)/.." 2>/dev/null && pwd || true)}}"
 GOV_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ERRORS=()
 
@@ -81,8 +82,11 @@ validate_dayplan() { # <staged-path> <tmpfile>
     # резолвера/интерпретатора — пропуск с WARN (оценить конфиг нечем).
     local config="$WORKSPACE/memory/day-rhythm-config.yaml"
     local py=""
-    if [ -f "$WORKSPACE/scripts/lib/find-python3.sh" ]; then
-        py=$("$WORKSPACE/scripts/lib/find-python3.sh" 2>/dev/null) || py=""
+    # Валидатор поставляется в FMT-exocortex-template/scripts, поэтому общий
+    # резолвер Python находится рядом с ним в lib/. Корень workspace содержит
+    # репозитории, но не обязан иметь собственный scripts/lib.
+    if [ -f "$SCRIPT_DIR/lib/find-python3.sh" ]; then
+        py=$("$SCRIPT_DIR/lib/find-python3.sh" 2>/dev/null) || py=""
     fi
     if [ -f "$config" ]; then
         if [ -z "$py" ]; then
